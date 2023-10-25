@@ -73,7 +73,7 @@ RS *dep_lookup(char *src)
 	int instr = instr_proc-1;
 
 	while(instr>0){
-		if(!strcmp(iq[instr].dest,src)){
+		if(!strcmp(iq[instr].dest, src)){
 			return iq[instr].cur;
 		}
 		instr--;
@@ -89,32 +89,29 @@ static void update_rs_exec(int stn_type, int no_stn)
 
 	/*Find the reservation station requested */
 	switch(stn_type){
-		case FP_ADD : rsrv_stn = RES_STN(add,_fp);
-						  break;
-		case FP_MUL : rsrv_stn = RES_STN(mul,_fp);
-						  break;
+		case FP_ADD: rsrv_stn = RES_STN(add,_fp);
+            break;
+		case FP_MUL: rsrv_stn = RES_STN(mul,_fp);
+		    break;
 		case INT_ADD: rsrv_stn = RES_STN(add,_int);
-						  break;
+		    break;
 		case INT_MUL: rsrv_stn = RES_STN(mul,_int);
-						  break;
-		case LD : rsrv_stn = RES_STN(ld,);
-						  break;
-		case SD : rsrv_stn = RES_STN(sd,);
-						  break;
+		    break;
+		case LD: rsrv_stn = RES_STN(ld,);
+		    break;
+		case SD: rsrv_stn = RES_STN(sd,);
+		    break;
 
-		default : fatal("Access to a non existed reservation station requested"); 
-		
-		}
+		default: fatal("Access to a non existed reservation station requested"); 
+                break;
+    }
 
 	/*Cycle through_ Reservation Stations of the given type*/
-	while(rs_no<no_stn){
-
+	while(rs_no < no_stn){
 		if(rsrv_stn[rs_no].status == BUSY){
-			
 			if((rsrv_stn[rs_no].qj == NULL)&&(rsrv_stn[rs_no].qk == NULL)){
-
 				/*if the timer has not been set ,set it to the instruction latency*/
-				if(rsrv_stn[rs_no].timer==0){
+				if(rsrv_stn[rs_no].timer == 0){
 					rsrv_stn[rs_no].timer = rsrv_stn[rs_no].instr->latency; /*TO DO Move the latency to RS ?*/
 					rsrv_stn[rs_no].instr->exec_time = cycles;
 				}
@@ -134,40 +131,34 @@ static void update_rs_write(int stn_type, int no_stn)
 
 	/*Find the reservation station requested */
 	switch(stn_type){
-		case FP_ADD : rsrv_stn = RES_STN(add,_fp);
-						  break;
-		case FP_MUL : rsrv_stn = RES_STN(mul,_fp);
-						  break;
+		case FP_ADD: rsrv_stn = RES_STN(add,_fp);
+	        break;
+		case FP_MUL: rsrv_stn = RES_STN(mul,_fp);
+		    break;
 		case INT_ADD: rsrv_stn = RES_STN(add,_int);
-						  break;
+		    break;
 		case INT_MUL: rsrv_stn = RES_STN(mul,_int);
-						  break;
-		case LD : rsrv_stn = RES_STN(ld,);
-						  break;
-		case SD : rsrv_stn = RES_STN(sd,);
-						  break;
-		default : fatal("Access to a non existed reservation station requested"); 
-		
-		}
+		    break;
+		case LD: rsrv_stn = RES_STN(ld,);
+		    break;
+		case SD: rsrv_stn = RES_STN(sd,);
+		    break;
+		default: fatal("Access to a non existed reservation station requested"); 
+            break;
+    }
 
 	/*Cycle through the Reservation Stations of the given type*/
-	while(rs_no<no_stn){
-	 
-	/*check if any RS is ready to move to write back stage*/
+	while(rs_no < no_stn){
+	    /*check if any RS is ready to move to write back stage*/
 		if(rsrv_stn[rs_no].status == BUSY){
-			
 			if((rsrv_stn[rs_no].qj == NULL)&&(rsrv_stn[rs_no].qk == NULL)){
-
 				/*if the functional unit has completed execution*/
 				if(rsrv_stn[rs_no].timer == 0){
 					rsrv_stn[rs_no].status = RESULT_READY;
 				}
 			}
-		}
-	
-	 /*Also check if any RS will complete write back this cycle*/
-		else if(rsrv_stn[rs_no].status == RESULT_READY){
-			
+	    /*Also check if any RS will complete write back this cycle*/
+		} else if (rsrv_stn[rs_no].status == RESULT_READY){
 			/*update the write back time */
 			rsrv_stn[rs_no].instr->write_time = cycles;
 			
@@ -175,9 +166,7 @@ static void update_rs_write(int stn_type, int no_stn)
 			rsrv_stn[rs_no].status = AVAILABLE;
 			rsrv_stn[rs_no].instr = NULL;		
 			rsrv_stn[rs_no].qj = rsrv_stn[rs_no].qk = NULL;
-
 		}
-		
 		rs_no++;
 	}
 }
@@ -185,23 +174,22 @@ static void update_rs_write(int stn_type, int no_stn)
 void execute()
 {
 	/*Update the fields of all the reservations stations*/
- 	update_rs_exec(FP_ADD,NUM_FLT_ADD_RS);
- 	update_rs_exec(FP_MUL,NUM_FLT_MUL_RS);
-	update_rs_exec(INT_ADD,NUM_INT_ADD_RS);
-	update_rs_exec(INT_MUL,NUM_INT_MUL_RS);
-	update_rs_exec(LD,NUM_LD_RS);
-	update_rs_exec(SD,NUM_SD_RS);
-
+    update_rs_exec(FP_ADD, NUM_FLT_ADD_RS);
+    update_rs_exec(FP_MUL, NUM_FLT_MUL_RS);
+    update_rs_exec(INT_ADD, NUM_INT_ADD_RS);
+    update_rs_exec(INT_MUL, NUM_INT_MUL_RS);
+    update_rs_exec(LD, NUM_LD_RS);
+    update_rs_exec(SD, NUM_SD_RS);
 }
 
 void write_back()
 {
- 	update_rs_write(FP_ADD,NUM_FLT_ADD_RS);
- 	update_rs_write(FP_MUL,NUM_FLT_MUL_RS);
-	update_rs_write(INT_ADD,NUM_INT_ADD_RS);
-	update_rs_write(INT_MUL,NUM_INT_MUL_RS);
-	update_rs_write(LD,NUM_LD_RS);
-	update_rs_write(SD,NUM_SD_RS);
+    update_rs_write(FP_ADD, NUM_FLT_ADD_RS);
+    update_rs_write(FP_MUL, NUM_FLT_MUL_RS);
+    update_rs_write(INT_ADD, NUM_INT_ADD_RS);
+    update_rs_write(INT_MUL, NUM_INT_MUL_RS);
+    update_rs_write(LD, NUM_LD_RS);
+    update_rs_write(SD, NUM_SD_RS);
 }
 
 void issue () {
@@ -210,7 +198,7 @@ void issue () {
 	RS *rs_type, *rs;
 	curr = &iq[instr_proc];
 
-	/* Based on the opcode type, assign a common looping pointer and a counter {{{ */ 
+	/* Based on the opcode type, assign a common looping pointer and a counter */ 
 	if (!(strcmp ("ADD", curr->opcd)) || !(strcmp ("SUB", curr->opcd))) {
 		rs_count = NUM_INT_ADD_RS; rs_type = add_int_rs;
 	}
@@ -229,9 +217,8 @@ void issue () {
 	else if (!(strcmp ("SD", curr->opcd))) {
 		rs_count = NUM_SD_RS; rs_type = sd_rs;
 	}
-	/* }}} */
 
-	/* Grab the first available RS of the type selected in the previous step {{{ */
+	/* Grab the first available RS of the type selected in the previous step */
 	for (i = 0; i < rs_count; i++)
 		if (rs_type[i].status == AVAILABLE)
 			break;
@@ -241,8 +228,6 @@ void issue () {
 	/* call to process the same instruction for issuing */ 
 
 	if (i >= rs_count) return;
-
-	/* }}} */
 
 	/* now, the instruction is ready to be issued. we can get started */
 	rs = &rs_type[i];
@@ -264,8 +249,10 @@ int main (int argc, char **argv) {
 
 	parse_args (argc, argv);
 
+    // parse instruction defination
 	parse_file (inst_defn_file, 'd');
 
+    // parse sample code to be simulate, queue the instructions
 	parse_file (inst_trace_file, 't');
 
 	create_arch();

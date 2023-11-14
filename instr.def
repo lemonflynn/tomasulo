@@ -7,8 +7,8 @@
 # TYPE : I - Integer / F - Float / C -Common
 
 # Memory operations
-LD 		2 	3 	C
-SD 		2 	3 	C
+LD 		3 	3 	C
+SD 		3 	3 	C
 
 # Integer Operations
 ADD 	3 	2 	I

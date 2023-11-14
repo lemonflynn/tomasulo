@@ -84,6 +84,8 @@ static void queue_instuction (char *line) {
 	if (instr_defn.num_ops > 2) 
 		iq[instr_count].src2 = strdup (strtok (NULL, DELIMITERS));
 
+    iq[instr_count].type = instr_defn.type;
+
 	pinfo ("Instruction %d : %s %s, %s, %s \n", instr_count, 
 			iq[instr_count].opcd, iq[instr_count].dest,
 			iq[instr_count].src1, iq[instr_count].src2);

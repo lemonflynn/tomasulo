@@ -9,6 +9,7 @@ int instr_count = 0;
 int instr_proc = 0;
 unsigned int cycles = 0;
 
+RS *all_rs;
 RS *add_fp_rs;
 RS *add_int_rs;
 RS *mul_fp_rs;
@@ -16,7 +17,8 @@ RS *mul_int_rs;
 RS *ld_rs;
 RS *sd_rs;
 
-static uint32_t mem[4096];
+static int mem[4096];
+static int total_rs_num;
 
 struct reg_status int_reg_status[NUM_INT_REGS];
 struct reg_status float_reg_status[NUM_FLOAT_REGS];
@@ -26,16 +28,23 @@ struct reg_status float_reg_status[NUM_FLOAT_REGS];
 void create_arch()
 {
 	int i;
-	add_fp_rs = malloc (NUM_FLT_ADD_RS * sizeof (RS));
-	add_int_rs = malloc (NUM_INT_ADD_RS * sizeof (RS));
-	mul_fp_rs = malloc (NUM_FLT_MUL_RS * sizeof (RS));
-	mul_int_rs = malloc (NUM_INT_MUL_RS * sizeof (RS));
-	ld_rs = malloc (NUM_LD_RS * sizeof (RS));
-	sd_rs = malloc (NUM_SD_RS * sizeof (RS));
 
-	if(!add_fp_rs || !add_int_rs || !mul_fp_rs || !mul_int_rs || !ld_rs || !sd_rs){
+    total_rs_num = NUM_LD_RS + NUM_SD_RS + NUM_INT_ADD_RS + NUM_INT_MUL_RS + NUM_FLT_ADD_RS + NUM_FLT_MUL_RS;
+
+    printf("we get %d reservation station\n", total_rs_num);
+
+    all_rs = (RS *)malloc(total_rs_num * sizeof (RS));
+
+	if (!all_rs) {
 		fatal("Error creating the architecture\n");
 	}
+
+    add_fp_rs = all_rs;
+    add_int_rs = all_rs + NUM_FLT_ADD_RS;
+    mul_fp_rs = add_int_rs + NUM_INT_ADD_RS;
+    mul_int_rs = mul_fp_rs + NUM_FLT_MUL_RS;
+    ld_rs = mul_int_rs + NUM_INT_MUL_RS;
+    sd_rs = ld_rs + NUM_LD_RS;
 
     memset(add_fp_rs, 0, NUM_FLT_ADD_RS * sizeof (RS));
     memset(add_int_rs, 0, NUM_INT_ADD_RS * sizeof (RS));
@@ -84,91 +93,85 @@ void create_arch()
 
 RS *dep_lookup(char *src)
 {
-    int i, reg_num;
-    reg_num = atoi(&src[1]);
+    int reg_idx;
+    reg_idx = atoi(&src[1]);
 
     /* the src should be register */
     if(src[0] != 'R' && src[0] != 'F')
         return NULL;
 
-    printf("reg num %d\n", reg_num);
+    printf("reg num %d\n", reg_idx);
     if(src[0] == 'R') {
-        return int_reg_status[reg_num].rs;
+        return int_reg_status[reg_idx].rs;
     } else {
-        return float_reg_status[reg_num].rs;
+        return float_reg_status[reg_idx].rs;
     }
 
 	return NULL;
 }
 
-static void dump_rs_state(int stn_type, int no_stn)
+static RS * find_rs(int stn_type)
 {
-	RS *rsrv_stn;
-	int rs_no = 0;
-
+	RS *rsrv_stn = NULL;
 	/*Find the reservation station requested */
 	switch(stn_type){
-		case FP_ADD: rsrv_stn = RES_STN(add,_fp);
+		case FP_ADD:
+            rsrv_stn = RES_STN(add,_fp);
             break;
-		case FP_MUL: rsrv_stn = RES_STN(mul,_fp);
+		case FP_MUL:
+            rsrv_stn = RES_STN(mul,_fp);
 		    break;
-		case INT_ADD: rsrv_stn = RES_STN(add,_int);
+		case INT_ADD:
+            rsrv_stn = RES_STN(add,_int);
 		    break;
-		case INT_MUL: rsrv_stn = RES_STN(mul,_int);
+		case INT_MUL:
+            rsrv_stn = RES_STN(mul,_int);
 		    break;
-		case LD: rsrv_stn = RES_STN(ld,);
+		case LD:
+            rsrv_stn = RES_STN(ld,);
 		    break;
-		case SD: rsrv_stn = RES_STN(sd,);
+		case SD:
+            rsrv_stn = RES_STN(sd,);
 		    break;
-
-		default: fatal("Access to a non existed reservation station requested"); 
-                break;
+		default:
+            fatal("Access to a non existed reservation station requested");
+            break;
     }
+    return rsrv_stn;
+}
+
+static void dump_rs_state(int stn_type, int no_stn)
+{
+	RS *rsrv_stn = find_rs(stn_type);
+	int rs_no = 0;
 
 	/*Cycle through_ Reservation Stations of the given type*/
 	while(rs_no < no_stn){
         //| Name    | Busy    |  Addr.   | Op      | Vj      | Vk      | Qj      | Qk      |
+/*
         printf("| %s | %d | %d | %s | %d | %d | %s | %s |\n",
                 rsrv_stn[rs_no].name,
                 rsrv_stn[rs_no].status != AVAILABLE,
                 ,
+*/
         rs_no++;
     }
 }
 
 static void update_rs_exec(int stn_type, int no_stn)
 {
-	RS *rsrv_stn;
+	RS *rsrv_stn = find_rs(stn_type);
 	int rs_no = 0;
-
-	/*Find the reservation station requested */
-	switch(stn_type){
-		case FP_ADD: rsrv_stn = RES_STN(add,_fp);
-            break;
-		case FP_MUL: rsrv_stn = RES_STN(mul,_fp);
-		    break;
-		case INT_ADD: rsrv_stn = RES_STN(add,_int);
-		    break;
-		case INT_MUL: rsrv_stn = RES_STN(mul,_int);
-		    break;
-		case LD: rsrv_stn = RES_STN(ld,);
-		    break;
-		case SD: rsrv_stn = RES_STN(sd,);
-		    break;
-
-		default: fatal("Access to a non existed reservation station requested");
-                break;
-    }
 
 	/*Cycle through_ Reservation Stations of the given type*/
 	while(rs_no < no_stn) {
 		if(rsrv_stn[rs_no].status == BUSY) {
 			if((rsrv_stn[rs_no].qj == NULL)&&(rsrv_stn[rs_no].qk == NULL)) {
 				/*if the timer has not been set ,set it to the instruction latency*/
-				if(rsrv_stn[rs_no].timer == 0) {
+				if(rsrv_stn[rs_no].timer == -1) {
                     /* caculate the effective address */
                     if(stn_type == LD || stn_type == SD)
-                        rsrv_stn[rs_no].addr += rsrv_stn[rs_no].vj;
+                        rsrv_stn[rs_no].addr += rsrv_stn[rs_no].vj.i_val;
 
 					rsrv_stn[rs_no].timer = rsrv_stn[rs_no].instr->latency; /*TO DO Move the latency to RS ?*/
 				} else {
@@ -177,86 +180,67 @@ static void update_rs_exec(int stn_type, int no_stn)
                 }
 			}
 		}
-	
 		rs_no++;
 	}
 }
 
 static void update_rs_write(int stn_type, int no_stn)
 {
-	RS *rsrv_stn;
+	RS *rsrv_stn = find_rs(stn_type);
 	RS *rs_station;
 	int rs_no = 0;
-    int dst_reg_num = 0;
-
-	/*Find the reservation station requested */
-	switch(stn_type){
-		case FP_ADD: rsrv_stn = RES_STN(add,_fp);
-	        break;
-		case FP_MUL: rsrv_stn = RES_STN(mul,_fp);
-		    break;
-		case INT_ADD: rsrv_stn = RES_STN(add,_int);
-		    break;
-		case INT_MUL: rsrv_stn = RES_STN(mul,_int);
-		    break;
-		case LD: rsrv_stn = RES_STN(ld,);
-		    break;
-		case SD: rsrv_stn = RES_STN(sd,);
-		    break;
-		default: fatal("Access to a non existed reservation station requested"); 
-            break;
-    }
+    int dst_reg_idx = 0;
 
 	/*Cycle through the Reservation Stations of the given type*/
 	while(rs_no < no_stn) {
         rs_station = &rsrv_stn[rs_no];
 	    /*check if any RS is ready to move to write back stage*/
-		if(rs_station.status == BUSY) {
-			if((rs_station.qj == NULL)&&(rs_station.qk == NULL)) {
+		if(rs_station->status == BUSY) {
+			if((rs_station->qj == NULL)&&(rs_station->qk == NULL)) {
 				/*if the functional unit has completed execution*/
-				if(rs_station.timer == 0) {
-					rs_station.status = RESULT_READY;
-					rs_station.instr->exec_time = cycles;
+				if(rs_station->timer == 0) {
+					rs_station->status = RESULT_READY;
+					rs_station->instr->exec_time = cycles;
 				}
 			}
 	    /*Also check if any RS will complete write back this cycle*/
-		} else if (rs_station.status == RESULT_READY) {
+		} else if (rs_station->status == RESULT_READY) {
 			/*update the write back time */
-			rs_station.instr->write_time = cycles;
+			rs_station->instr->write_time = cycles;
 			
-            dst_reg_num = atoi(&rs_station.instr->dest[1]);
-            printf("dst_reg_num %d\n", dst_reg_num);
+            dst_reg_idx = atoi(&rs_station->instr->dest[1]);
+            printf("dst_reg_idx %d\n", dst_reg_idx);
 
             /* update register file */
             switch(stn_type) {
 		        case FP_ADD:
-                    float_reg_status[dst_reg_num].reg_val.f_val = rs_station.vj.f_val +
-                                                        rs_station.vk.f_val;
-                    float_reg_status[dst_reg_num].rs = NULL;
+                    float_reg_status[dst_reg_idx].reg_val.f_val = rs_station->vj.f_val +
+                                                        rs_station->vk.f_val;
+                    float_reg_status[dst_reg_idx].rs = NULL;
                     break;
                 case FP_MUL:
-                    float_reg_status[dst_reg_num].reg_val.f_val = rs_station.vj.f_val *
-                                                        rs_station.vk.f_val;
-                    float_reg_status[dst_reg_num].rs = NULL;
+                    float_reg_status[dst_reg_idx].reg_val.f_val = rs_station->vj.f_val *
+                                                        rs_station->vk.f_val;
+                    float_reg_status[dst_reg_idx].rs = NULL;
                     break;
 		        case INT_ADD:
-                    int_reg_status[dst_reg_num].reg_val.i_val = rs_station.vj.i_val +
-                                                        rs_station.vk.i_val;
-                    int_reg_status[dst_reg_num].rs = NULL;
+                    int_reg_status[dst_reg_idx].reg_val.i_val = rs_station->vj.i_val +
+                                                        rs_station->vk.i_val;
+                    int_reg_status[dst_reg_idx].rs = NULL;
                     break;
 		        case INT_MUL:
-                    int_reg_status[dst_reg_num].reg_val.i_val = rs_station.vj.i_val *
-                                                        rs_station.vk.i_val;
-                    int_reg_status[dst_reg_num].rs = NULL;
+                    int_reg_status[dst_reg_idx].reg_val.i_val = rs_station->vj.i_val *
+                                                        rs_station->vk.i_val;
+                    int_reg_status[dst_reg_idx].rs = NULL;
                     break;
                 /* LD SD only support integer at this point */
                 case LD:
-                    int_reg_status[dst_reg_num].i_val = mem[rs_station.addr];
-                    int_reg_status[dst_reg_num].rs = NULL;
+                    int_reg_status[dst_reg_idx].reg_val.i_val = mem[rs_station->addr];
+                    int_reg_status[dst_reg_idx].rs = NULL;
                     break;
                 case SD:
                     //TODO is the reg value available to store ?
-                    mem[rs_station.addr] = int_reg_status[dst_reg_num].i_val;
+                    mem[rs_station->addr] = int_reg_status[dst_reg_idx].reg_val.i_val;
                     break;
                 default:
                     printf("error instruction type \n");
@@ -265,10 +249,12 @@ static void update_rs_write(int stn_type, int no_stn)
 
             /* TODO, update related RS */
 
-			/*Flust the instruction and reset the reservation station */
-			rs_station.status = AVAILABLE;
-			rs_station.instr = NULL;
-			rs_station.qj = rs_station.qk = NULL;
+			/*Flush the instruction and reset the reservation station */
+			rs_station->status = AVAILABLE;
+			rs_station->instr = NULL;
+			rs_station->timer = -1;
+			rs_station->qj = rs_station->qk = NULL;
+			rs_station->vj.i_val = rs_station->vk.i_val = 0;
 		}
 		rs_no++;
 	}
@@ -277,6 +263,7 @@ static void update_rs_write(int stn_type, int no_stn)
 void execute()
 {
 	/*Update the fields of all the reservations stations*/
+    // TODO, really need to call 6 times ?
     update_rs_exec(FP_ADD, NUM_FLT_ADD_RS);
     update_rs_exec(FP_MUL, NUM_FLT_MUL_RS);
     update_rs_exec(INT_ADD, NUM_INT_ADD_RS);
@@ -301,6 +288,7 @@ void issue () {
 	RS *rs_type, *rs;
     char * dst_reg_str;
     struct reg_status * reg = NULL;
+    int reg_idx1, reg_idx2;
 	curr = &iq[instr_proc];
 
 	/* Based on the opcode type, assign a common looping pointer and a counter */ 
@@ -338,6 +326,7 @@ void issue () {
 	rs = &rs_type[i];
 	rs->status = BUSY;
 	rs->instr = curr;
+	rs->timer = -1;
 
     dst_reg_str = &curr->dest[1];
     dst_reg = atoi(dst_reg_str);
@@ -349,20 +338,23 @@ void issue () {
 
     reg[dst_reg].rs = rs;
 
+    reg_idx1 = atoi(&curr->src1[1]);
+    reg_idx2 = atoi(&curr->src2[1]);
     // LD or ST inst
     // TODO, ST is different from LD, no dest reg ?
-    if(curr->type == COMMON)
+    if(curr->type == COMMON) {
         rs->addr = atoi(curr->src1);
 		rs->qj = dep_lookup (curr->src2);
+        //TODO, use int reg or float reg ?
         if(!rs->qj)
-            rs->vj = int_reg_status[curr->src2].reg_val;
+            rs->vj.i_val = int_reg_status[reg_idx2].reg_val.i_val;
     } else {
 		rs->qj = dep_lookup (curr->src1);
         rs->qk = dep_lookup (curr->src2);
         if(!rs->qj)
-            rs->vj = reg[curr->src1].reg_val;
+            rs->vj.i_val = reg[reg_idx1].reg_val.i_val;
         if(!rs->qk)
-            rs->vk = reg[curr->src2].reg_val;
+            rs->vk.i_val = reg[reg_idx2].reg_val.i_val;
     }
 
 	curr->issue_time = cycles;

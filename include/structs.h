@@ -42,6 +42,8 @@ struct resrv_stn {
 	int timer;
 };
 
+typedef struct resrv_stn RS;
+
 struct reg_status{
     RS * rs;
     union {
@@ -50,4 +52,3 @@ struct reg_status{
     } reg_val;
 };
 
-typedef struct resrv_stn RS;

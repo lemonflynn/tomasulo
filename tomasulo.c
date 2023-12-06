@@ -521,6 +521,7 @@ static void dump_state()
             printf(" R%d: %d |", i, int_reg_status[i].reg_val.i_val);
     }
     printf("\n");
+    printf("|");
     for(i = 0; i < NUM_FLOAT_REGS; i++) {
         if(float_reg_status[i].reg_val.f_val != 0)
             printf(" F%d: %f |", i, float_reg_status[i].reg_val.f_val);

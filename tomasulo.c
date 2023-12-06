@@ -34,6 +34,7 @@ void create_arch()
     printf("we get %d reservation station\n", total_rs_num);
 
     all_rs = (RS *)malloc(total_rs_num * sizeof (RS));
+    memset(all_rs, 0, total_rs_num * sizeof (RS));
 
 	if (!all_rs) {
 		fatal("Error creating the architecture\n");
@@ -45,13 +46,6 @@ void create_arch()
     mul_int_rs = mul_fp_rs + NUM_FLT_MUL_RS;
     ld_rs = mul_int_rs + NUM_INT_MUL_RS;
     sd_rs = ld_rs + NUM_LD_RS;
-
-    memset(add_fp_rs, 0, NUM_FLT_ADD_RS * sizeof (RS));
-    memset(add_int_rs, 0, NUM_INT_ADD_RS * sizeof (RS));
-    memset(mul_fp_rs, 0, NUM_FLT_MUL_RS * sizeof (RS));
-    memset(mul_int_rs, 0, NUM_INT_MUL_RS * sizeof (RS));
-    memset(ld_rs, 0, NUM_LD_RS * sizeof (RS));
-    memset(sd_rs, 0, NUM_SD_RS * sizeof (RS));
 
     memset(int_reg_status, 0, sizeof(struct reg_status) * NUM_INT_REGS);
     memset(float_reg_status, 0, sizeof(struct reg_status) * NUM_FLOAT_REGS);
@@ -91,16 +85,16 @@ void create_arch()
 	}
 }
 
+bool src_is_reg(char *src)
+{
+    return (src[0] == 'R') || (src[0] == 'F');
+}
+
 RS *dep_lookup(char *src)
 {
     int reg_idx;
     reg_idx = atoi(&src[1]);
 
-    /* the src should be register */
-    if(src[0] != 'R' && src[0] != 'F')
-        return NULL;
-
-    printf("reg num %d\n", reg_idx);
     if(src[0] == 'R') {
         return int_reg_status[reg_idx].rs;
     } else {
@@ -140,24 +134,6 @@ static RS * find_rs(int stn_type)
     return rsrv_stn;
 }
 
-static void dump_rs_state(int stn_type, int no_stn)
-{
-	RS *rsrv_stn = find_rs(stn_type);
-	int rs_no = 0;
-
-	/*Cycle through_ Reservation Stations of the given type*/
-	while(rs_no < no_stn){
-        //| Name    | Busy    |  Addr.   | Op      | Vj      | Vk      | Qj      | Qk      |
-/*
-        printf("| %s | %d | %d | %s | %d | %d | %s | %s |\n",
-                rsrv_stn[rs_no].name,
-                rsrv_stn[rs_no].status != AVAILABLE,
-                ,
-*/
-        rs_no++;
-    }
-}
-
 static void update_rs_exec(int stn_type, int no_stn)
 {
 	RS *rsrv_stn = find_rs(stn_type);
@@ -166,6 +142,7 @@ static void update_rs_exec(int stn_type, int no_stn)
 	/*Cycle through_ Reservation Stations of the given type*/
 	while(rs_no < no_stn) {
 		if(rsrv_stn[rs_no].status == BUSY) {
+            /* inst ready to execute ? */
 			if((rsrv_stn[rs_no].qj == NULL)&&(rsrv_stn[rs_no].qk == NULL)) {
 				/*if the timer has not been set ,set it to the instruction latency*/
 				if(rsrv_stn[rs_no].timer == -1) {
@@ -187,9 +164,10 @@ static void update_rs_exec(int stn_type, int no_stn)
 static void update_rs_write(int stn_type, int no_stn)
 {
 	RS *rsrv_stn = find_rs(stn_type);
-	RS *rs_station;
+	RS *rs_station, *iter_rs;
 	int rs_no = 0;
     int dst_reg_idx = 0;
+    int i;
 
 	/*Cycle through the Reservation Stations of the given type*/
 	while(rs_no < no_stn) {
@@ -209,28 +187,55 @@ static void update_rs_write(int stn_type, int no_stn)
 			rs_station->instr->write_time = cycles;
 			
             dst_reg_idx = atoi(&rs_station->instr->dest[1]);
-            printf("dst_reg_idx %d\n", dst_reg_idx);
 
             /* update register file */
             switch(stn_type) {
 		        case FP_ADD:
-                    float_reg_status[dst_reg_idx].reg_val.f_val = rs_station->vj.f_val +
+                    if(!strcmp ("ADDD", rs_station->instr->opcd))
+                        float_reg_status[dst_reg_idx].reg_val.f_val = rs_station->vj.f_val +
                                                         rs_station->vk.f_val;
+                    else if (!strcmp ("SUBD", rs_station->instr->opcd))
+                        float_reg_status[dst_reg_idx].reg_val.f_val = rs_station->vj.f_val -
+                                                        rs_station->vk.f_val;
+                    else
+                        printf("!! wrong instrucion\n");
+
                     float_reg_status[dst_reg_idx].rs = NULL;
                     break;
                 case FP_MUL:
-                    float_reg_status[dst_reg_idx].reg_val.f_val = rs_station->vj.f_val *
+                    if(!strcmp ("MULD", rs_station->instr->opcd))
+                        float_reg_status[dst_reg_idx].reg_val.f_val = rs_station->vj.f_val *
                                                         rs_station->vk.f_val;
+                    else if (!strcmp ("DIVD", rs_station->instr->opcd))
+                        float_reg_status[dst_reg_idx].reg_val.f_val = rs_station->vj.f_val /
+                                                        rs_station->vk.f_val;
+                    else
+                        printf("!! wrong instrucion\n");
+
                     float_reg_status[dst_reg_idx].rs = NULL;
                     break;
 		        case INT_ADD:
-                    int_reg_status[dst_reg_idx].reg_val.i_val = rs_station->vj.i_val +
+                    if(!strcmp ("ADD", rs_station->instr->opcd))
+                        int_reg_status[dst_reg_idx].reg_val.i_val = rs_station->vj.i_val +
                                                         rs_station->vk.i_val;
+                    else if(!strcmp ("SUB", rs_station->instr->opcd))
+                        int_reg_status[dst_reg_idx].reg_val.i_val = rs_station->vj.i_val -
+                                                        rs_station->vk.i_val;
+                    else
+                        printf("!! wrong instrucion\n");
+
                     int_reg_status[dst_reg_idx].rs = NULL;
                     break;
 		        case INT_MUL:
-                    int_reg_status[dst_reg_idx].reg_val.i_val = rs_station->vj.i_val *
+                    if(!strcmp ("MUL", rs_station->instr->opcd))
+                        int_reg_status[dst_reg_idx].reg_val.i_val = rs_station->vj.i_val *
                                                         rs_station->vk.i_val;
+                    else if(!strcmp ("DIV", rs_station->instr->opcd))
+                        int_reg_status[dst_reg_idx].reg_val.i_val = rs_station->vj.i_val /
+                                                        rs_station->vk.i_val;
+                    else
+                        printf("!! wrong instrucion\n");
+
                     int_reg_status[dst_reg_idx].rs = NULL;
                     break;
                 /* LD SD only support integer at this point */
@@ -248,6 +253,35 @@ static void update_rs_write(int stn_type, int no_stn)
             }
 
             /* TODO, update related RS */
+            for(i = 0; i < total_rs_num; i++) {
+                iter_rs = all_rs + i;
+                /* skip current rs station */
+                if(iter_rs  == rs_station)
+                    continue;
+
+                if(iter_rs->status != BUSY)
+                    continue;
+
+                if(iter_rs->qj == rs_station) {
+                    iter_rs->qj = NULL;
+                    if(rs_station->instr->type == FLOAT)
+                        iter_rs->vj.f_val = float_reg_status[dst_reg_idx].reg_val.f_val;
+                    else if(rs_station->instr->type == INTEGER)
+                        iter_rs->vj.i_val = int_reg_status[dst_reg_idx].reg_val.i_val;
+                    else if(stn_type == LD)
+                        iter_rs->vj.i_val = int_reg_status[dst_reg_idx].reg_val.i_val;
+                }
+
+                if(iter_rs->qk == rs_station) {
+                    iter_rs->qk = NULL;
+                    if(rs_station->instr->type == FLOAT)
+                        iter_rs->vk.f_val = float_reg_status[dst_reg_idx].reg_val.f_val;
+                    else if(rs_station->instr->type == INTEGER)
+                        iter_rs->vk.i_val = int_reg_status[dst_reg_idx].reg_val.i_val;
+                    else if(stn_type == LD)
+                        iter_rs->vk.i_val = int_reg_status[dst_reg_idx].reg_val.i_val;
+                }
+            }
 
 			/*Flush the instruction and reset the reservation station */
 			rs_station->status = AVAILABLE;
@@ -296,10 +330,10 @@ void issue () {
 		rs_count = NUM_INT_ADD_RS; rs_type = add_int_rs;
 	}
 	else if (!(strcmp ("ADDD", curr->opcd)) || !(strcmp ("SUBD", curr->opcd))) {
-		rs_count = NUM_FLT_ADD_RS; rs_type = mul_int_rs;
+		rs_count = NUM_FLT_ADD_RS; rs_type = add_fp_rs;
 	}
 	else if (!(strcmp ("MUL", curr->opcd)) || !(strcmp ("DIV", curr->opcd))) {
-		rs_count = NUM_INT_MUL_RS; rs_type = add_fp_rs;
+		rs_count = NUM_INT_MUL_RS; rs_type = mul_int_rs;
 	}
 	else if (!(strcmp ("MULD", curr->opcd)) || !(strcmp ("DIVD", curr->opcd))) {
 		rs_count = NUM_FLT_MUL_RS; rs_type = mul_fp_rs;
@@ -349,17 +383,25 @@ void issue () {
         if(!rs->qj)
             rs->vj.i_val = int_reg_status[reg_idx2].reg_val.i_val;
     } else {
-		rs->qj = dep_lookup (curr->src1);
-        rs->qk = dep_lookup (curr->src2);
-        if(!rs->qj)
-            rs->vj.i_val = reg[reg_idx1].reg_val.i_val;
-        if(!rs->qk)
-            rs->vk.i_val = reg[reg_idx2].reg_val.i_val;
+        if(src_is_reg(curr->src1)) {
+		    rs->qj = dep_lookup (curr->src1);
+            if(!rs->qj)
+                rs->vj.i_val = reg[reg_idx1].reg_val.i_val;
+        } else {
+            rs->vj.i_val = atoi(curr->src1);
+        }
+
+        if(src_is_reg(curr->src2)) {
+            rs->qk = dep_lookup (curr->src2);
+            if(!rs->qk)
+                rs->vk.i_val = reg[reg_idx2].reg_val.i_val;
+        } else {
+            rs->vk.i_val = atoi(curr->src2);
+        }
     }
 
 	curr->issue_time = cycles;
 	instr_proc++;	
-    printf("---%d\n", instr_proc);
 }
 
 bool instr_finished()
@@ -379,11 +421,124 @@ bool instr_finished()
     return true;
 }
 
+static void dump_rs_state(int stn_type, int no_stn)
+{
+	RS *rsrv_stn = find_rs(stn_type);
+    RS *iter_rs;
+	int rs_no = 0;
 
-int main (int argc, char **argv) {
+	/*Cycle through_ Reservation Stations of the given type*/
+	while(rs_no < no_stn){
+        iter_rs = rsrv_stn + rs_no;
+        rs_no++;
+        if(iter_rs->status == AVAILABLE)
+            continue;
+        //| Name    | Busy    |  Addr.   | Op      | Vj      | Vk      | Qj      | Qk      |
+        if(iter_rs->instr->type == FLOAT) {
+            printf("| %8s | %6d | %6d | %6s | %.4f | %.4f | %6s | %6s |\n",
+                iter_rs->name,
+                iter_rs->status != AVAILABLE,
+                iter_rs->addr,
+                (iter_rs->instr != NULL) ? iter_rs->instr->opcd : "-",
+                iter_rs->vj.f_val,
+                iter_rs->vk.f_val,
+                (iter_rs->qj != NULL) ? iter_rs->qj->name : "-",
+                (iter_rs->qk != NULL) ? iter_rs->qk->name : "-");
+        } else {
+            printf("| %8s | %6d | %6d | %6s | %6d | %6d | %6s | %6s |\n",
+                iter_rs->name,
+                iter_rs->status != AVAILABLE,
+                iter_rs->addr,
+                (iter_rs->instr != NULL) ? iter_rs->instr->opcd : "-",
+                iter_rs->vj.i_val,
+                iter_rs->vk.i_val,
+                (iter_rs->qj != NULL) ? iter_rs->qj->name : "-",
+                (iter_rs->qk != NULL) ? iter_rs->qk->name : "-");
+        }
+    }
+}
+
+static void dump_state()
+{
     int i;
     Instruction *inst;
 
+    printf("CK %d, PC %d\n", cycles, instr_proc);
+    printf("#+BEGIN_SRC\n");
+    for(i = 0; i < instr_count; i++) {
+        inst = &iq[i];
+        if(i == instr_proc)
+            printf("> %d %6s %3s %6s %6s\n", i, inst->opcd, inst->dest, inst->src1, inst->src2 ? inst->src2:"");
+        else
+            printf("  %d %6s %3s %6s %6s\n", i, inst->opcd, inst->dest, inst->src1, inst->src2 ? inst->src2:"");
+    }
+
+    printf("#+END_SRC\n");
+    printf("** Instruction status\n");
+    printf("|------------------------+---------+------------+---------|\n");
+    printf("| Instruction            | Issue   | Exec comp  | Write   |\n");
+    printf("|------------------------+---------+------------+---------|\n");
+    for(i = 0; i < instr_proc; i++) {
+        inst = &iq[i];
+        printf("|%6s %3s %6s %6s| %7d | %10d | %7d |\n",
+                inst->opcd, inst->dest, inst->src1, inst->src2 ? inst->src2:"",
+                inst->issue_time, inst->exec_time, inst->write_time);
+    }
+    printf("|------------------------+---------+------------+---------|\n");
+
+    printf("** Reservation station\n");
+    printf("|----------+--------+--------+--------+--------+--------+--------+--------|\n");
+    printf("| Name     | Busy   | Addr.  | Op     | Vj     | Vk     | Qj     | Qk     |\n");
+    printf("|----------+--------+--------+--------+--------+--------+--------+--------|\n");
+    dump_rs_state(FP_ADD, NUM_FLT_ADD_RS);
+    dump_rs_state(FP_MUL, NUM_FLT_MUL_RS);
+    dump_rs_state(INT_ADD, NUM_INT_ADD_RS);
+    dump_rs_state(INT_MUL, NUM_INT_MUL_RS);
+    dump_rs_state(LD, NUM_LD_RS);
+    dump_rs_state(SD, NUM_SD_RS);
+    printf("|----------+--------+--------+--------+--------+--------+--------+--------|\n");
+
+    printf("** Register result status (Qi)\n");
+    printf("|");
+    for(i = 0; i < NUM_INT_REGS; i++) {
+        if(int_reg_status[i].rs == NULL)
+            continue;
+        printf(" R%d: %s |", i, int_reg_status[i].rs->name);
+    }
+    printf("\n");
+    printf("|");
+    for(i = 0; i < NUM_FLOAT_REGS; i++) {
+        if(float_reg_status[i].rs == NULL)
+            continue;
+        printf(" F%d: %s |", i, float_reg_status[i].rs->name);
+    }
+    printf("\n");
+
+    printf("** Register file\n");
+    printf("|");
+    for(i = 0; i < NUM_INT_REGS; i++) {
+        if(int_reg_status[i].reg_val.i_val != 0)
+            printf(" R%d: %d |", i, int_reg_status[i].reg_val.i_val);
+    }
+    printf("\n");
+    for(i = 0; i < NUM_FLOAT_REGS; i++) {
+        if(float_reg_status[i].reg_val.f_val != 0)
+            printf(" F%d: %f |", i, float_reg_status[i].reg_val.f_val);
+    }
+    printf("\n");
+}
+
+void init_machine_state()
+{
+    int_reg_status[0].reg_val.i_val = 1;
+    int_reg_status[4].reg_val.i_val = 999;
+
+    float_reg_status[2].reg_val.f_val = 0.2;
+    float_reg_status[3].reg_val.f_val = 0.8;
+    float_reg_status[4].reg_val.f_val = 2.7;
+}
+
+int main (int argc, char **argv) {
 	parse_args (argc, argv);
 
     // parse instruction defination
@@ -394,45 +549,11 @@ int main (int argc, char **argv) {
 
 	create_arch();
 
+    init_machine_state();
+
 	while (!instr_finished()) {
 
-        printf("CK %d, PC %d\n", cycles, instr_proc);
-        printf("#+BEGIN_SRC\n");
-        for(i = 0; i < instr_count; i++) {
-	        inst = &iq[i];
-            if(i == instr_proc)
-                printf("> %d %6s %3s %6s %6s\n", i, inst->opcd, inst->dest, inst->src1, inst->src2 ? inst->src2:"");
-            else
-                printf("  %d %6s %3s %6s %6s\n", i, inst->opcd, inst->dest, inst->src1, inst->src2 ? inst->src2:"");
-        }
-
-        printf("#+END_SRC\n");
-        printf("** Instruction status\n");
-        printf("|------------------------+---------+------------+---------|\n");
-        printf("| Instruction            | Issue   | Exec comp  | Write   |\n");
-        printf("|------------------------+---------+------------+---------|\n");
-        for(i = 0; i < instr_proc; i++) {
-            inst = &iq[i];
-            printf("|%6s %3s %6s %6s| %7d | %10d | %7d |\n",
-                    inst->opcd, inst->dest, inst->src1, inst->src2 ? inst->src2:"",
-                    inst->issue_time, inst->exec_time, inst->write_time);
-        }
-        printf("|------------------------+---------+------------+---------|\n");
-
-        printf("** Reservation station\n");
-        printf("|---------+---------+----------+---------+---------+---------+---------+---------|\n");
-        printf("| Name    | Busy    |   Addr.  | Op      | Vj      | Vk      | Qj      | Qk      |\n");
-        printf("|---------+---------+----------+---------+---------+---------+---------+---------|\n");
-        printf("|---------+---------+----------+---------+---------+---------+---------+---------|\n");
-
-        printf("** Register result status (Qi)\n");
-        printf("|");
-        for(i = 0; i < NUM_INT_REGS; i++) {
-            if(int_reg_status[i].rs == NULL)
-                continue;
-            printf(" R%d: %s |", i, int_reg_status[i].rs->name);
-        }
-        printf("\n");
+        dump_state();
 
 		cycles++;
 

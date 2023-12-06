@@ -5,6 +5,7 @@ An application to simulate Tomasulo's algorithm
 
 This is intended to be an exercise to understand and implement the Tomasulo algorithm to dynamically schedule instructions in an out of order fashion.
 
+```
 CK 4, PC 4
 #+BEGIN_SRC
   0     LD  R1    234     R0
@@ -38,3 +39,4 @@ CK 4, PC 4
 ** Register file
 | R0: 1 | R4: 999 |
  F2: 0.200000 | F3: 0.800000 | F4: 2.700000 |
+```

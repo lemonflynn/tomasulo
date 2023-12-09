@@ -28,8 +28,8 @@ struct resrv_stn {
     char name[32];
 	enum rs_status status;
 	Instruction *instr;
-	struct resrv_stn *qj;
-	struct resrv_stn *qk;
+	int qj;
+	int qk;
     union {
         int i_val;
         float f_val;
@@ -40,15 +40,25 @@ struct resrv_stn {
     } vk;
     int addr;
 	int timer;
+    int dst_rob;
 };
 
 typedef struct resrv_stn RS;
 
 struct reg_status{
-    RS * rs;
+    int rob;
     union {
         int i_val;
         float f_val;
     } reg_val;
+};
+
+struct ROB {
+    Instruction *instr;
+    enum rs_status status;
+    union {
+        int i_val;
+        float f_val;
+    } val;
 };
 

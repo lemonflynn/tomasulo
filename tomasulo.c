@@ -1,6 +1,8 @@
 #include "header.h"
 #include "stdbool.h"
 
+#define ROB_NUM 5
+
 Operation *ops = NULL;
 Instruction *iq = NULL;
 
@@ -23,7 +25,32 @@ static int total_rs_num;
 struct reg_status int_reg_status[NUM_INT_REGS];
 struct reg_status float_reg_status[NUM_FLOAT_REGS];
 
-//TODO. re-order buffer
+//TODO. re-order buffer, is actually a circular buffer
+struct ROB * reorder_buffer;
+/*
+head is the first busy instr, thus, first to complete,
+tail is the last busy instr, new instruction would insert
+bebind this.
+*/
+int rob_head, rob_tail;
+int rob_flip;
+
+char status_str[6][16] = {
+    "unknow",
+    "available",
+    "busy",
+    "result ready",
+};
+
+bool rob_empty()
+{
+    return (rob_flip == 0) && (rob_head == rob_tail);
+}
+
+bool rob_full()
+{
+    return (rob_flip == 1) && (rob_head == rob_tail);
+}
 
 void create_arch()
 {
@@ -35,6 +62,13 @@ void create_arch()
 
     all_rs = (RS *)malloc(total_rs_num * sizeof (RS));
     memset(all_rs, 0, total_rs_num * sizeof (RS));
+
+    reorder_buffer = (struct ROB *) malloc(ROB_NUM * sizeof(struct ROB));
+    memset(reorder_buffer, 0, ROB_NUM * sizeof(struct ROB));
+    for(i = 0; i < ROB_NUM; i++)
+        reorder_buffer[i].status = AVAILABLE;
+    rob_head = rob_tail = 0;
+    rob_flip = 0;
 
 	if (!all_rs) {
 		fatal("Error creating the architecture\n");
@@ -49,6 +83,12 @@ void create_arch()
 
     memset(int_reg_status, 0, sizeof(struct reg_status) * NUM_INT_REGS);
     memset(float_reg_status, 0, sizeof(struct reg_status) * NUM_FLOAT_REGS);
+
+	for (i = 0; i < NUM_INT_REGS; i++)
+        int_reg_status[i].rob = -1;
+
+	for (i = 0; i < NUM_FLOAT_REGS; i++)
+        float_reg_status[i].rob = -1;
 
     memset(mem, 0, sizeof(mem));
 
@@ -90,18 +130,18 @@ bool src_is_reg(char *src)
     return (src[0] == 'R') || (src[0] == 'F');
 }
 
-RS *dep_lookup(char *src)
+int dep_lookup(char *src)
 {
     int reg_idx;
     reg_idx = atoi(&src[1]);
 
     if(src[0] == 'R') {
-        return int_reg_status[reg_idx].rs;
+        return int_reg_status[reg_idx].rob;
     } else {
-        return float_reg_status[reg_idx].rs;
+        return float_reg_status[reg_idx].rob;
     }
 
-	return NULL;
+	return -1;
 }
 
 static RS * find_rs(int stn_type)
@@ -143,7 +183,7 @@ static void update_rs_exec(int stn_type, int no_stn)
 	while(rs_no < no_stn) {
 		if(rsrv_stn[rs_no].status == BUSY) {
             /* inst ready to execute ? */
-			if((rsrv_stn[rs_no].qj == NULL)&&(rsrv_stn[rs_no].qk == NULL)) {
+			if((rsrv_stn[rs_no].qj == -1)&&(rsrv_stn[rs_no].qk == -1)) {
 				/*if the timer has not been set ,set it to the instruction latency*/
 				if(rsrv_stn[rs_no].timer == -1) {
                     /* caculate the effective address */
@@ -165,6 +205,7 @@ static void update_rs_write(int stn_type, int no_stn)
 {
 	RS *rsrv_stn = find_rs(stn_type);
 	RS *rs_station, *iter_rs;
+    struct ROB *rob_entry;
 	int rs_no = 0;
     int dst_reg_idx = 0;
     int i;
@@ -174,7 +215,7 @@ static void update_rs_write(int stn_type, int no_stn)
         rs_station = &rsrv_stn[rs_no];
 	    /*check if any RS is ready to move to write back stage*/
 		if(rs_station->status == BUSY) {
-			if((rs_station->qj == NULL)&&(rs_station->qk == NULL)) {
+			if((rs_station->qj == -1)&&(rs_station->qk == -1)) {
 				/*if the functional unit has completed execution*/
 				if(rs_station->timer == 0) {
 					rs_station->status = RESULT_READY;
@@ -187,64 +228,60 @@ static void update_rs_write(int stn_type, int no_stn)
 			rs_station->instr->write_time = cycles;
 			
             dst_reg_idx = atoi(&rs_station->instr->dest[1]);
+            rob_entry = &reorder_buffer[rs_station->dst_rob];
 
             /* update register file */
             switch(stn_type) {
 		        case FP_ADD:
                     if(!strcmp ("ADDD", rs_station->instr->opcd))
-                        float_reg_status[dst_reg_idx].reg_val.f_val = rs_station->vj.f_val +
+                        rob_entry->val.f_val = rs_station->vj.f_val +
                                                         rs_station->vk.f_val;
                     else if (!strcmp ("SUBD", rs_station->instr->opcd))
-                        float_reg_status[dst_reg_idx].reg_val.f_val = rs_station->vj.f_val -
+                        rob_entry->val.f_val = rs_station->vj.f_val -
                                                         rs_station->vk.f_val;
                     else
                         printf("!! wrong instrucion\n");
 
-                    float_reg_status[dst_reg_idx].rs = NULL;
                     break;
                 case FP_MUL:
                     if(!strcmp ("MULD", rs_station->instr->opcd))
-                        float_reg_status[dst_reg_idx].reg_val.f_val = rs_station->vj.f_val *
+                        rob_entry->val.f_val = rs_station->vj.f_val *
                                                         rs_station->vk.f_val;
                     else if (!strcmp ("DIVD", rs_station->instr->opcd))
-                        float_reg_status[dst_reg_idx].reg_val.f_val = rs_station->vj.f_val /
+                        rob_entry->val.f_val = rs_station->vj.f_val /
                                                         rs_station->vk.f_val;
                     else
                         printf("!! wrong instrucion\n");
 
-                    float_reg_status[dst_reg_idx].rs = NULL;
                     break;
 		        case INT_ADD:
                     if(!strcmp ("ADD", rs_station->instr->opcd))
-                        int_reg_status[dst_reg_idx].reg_val.i_val = rs_station->vj.i_val +
+                        rob_entry->val.i_val = rs_station->vj.i_val +
                                                         rs_station->vk.i_val;
                     else if(!strcmp ("SUB", rs_station->instr->opcd))
-                        int_reg_status[dst_reg_idx].reg_val.i_val = rs_station->vj.i_val -
+                        rob_entry->val.i_val = rs_station->vj.i_val -
                                                         rs_station->vk.i_val;
                     else
                         printf("!! wrong instrucion\n");
 
-                    int_reg_status[dst_reg_idx].rs = NULL;
                     break;
 		        case INT_MUL:
                     if(!strcmp ("MUL", rs_station->instr->opcd))
-                        int_reg_status[dst_reg_idx].reg_val.i_val = rs_station->vj.i_val *
+                        rob_entry->val.i_val = rs_station->vj.i_val *
                                                         rs_station->vk.i_val;
                     else if(!strcmp ("DIV", rs_station->instr->opcd))
-                        int_reg_status[dst_reg_idx].reg_val.i_val = rs_station->vj.i_val /
+                        rob_entry->val.i_val = rs_station->vj.i_val /
                                                         rs_station->vk.i_val;
                     else
                         printf("!! wrong instrucion\n");
 
-                    int_reg_status[dst_reg_idx].rs = NULL;
                     break;
                 /* LD SD only support integer at this point */
                 case LD:
-                    int_reg_status[dst_reg_idx].reg_val.i_val = mem[rs_station->addr];
-                    int_reg_status[dst_reg_idx].rs = NULL;
+                    rob_entry->val.i_val = mem[rs_station->addr];
                     break;
                 case SD:
-                    //TODO is the reg value available to store ?
+                    //TODO is the reg value available to store ? fix for ROB
                     mem[rs_station->addr] = int_reg_status[dst_reg_idx].reg_val.i_val;
                     break;
                 default:
@@ -252,18 +289,20 @@ static void update_rs_write(int stn_type, int no_stn)
                     break;
             }
 
+            rob_entry->status = RESULT_READY;
+
             /* TODO, update related RS */
             for(i = 0; i < total_rs_num; i++) {
                 iter_rs = all_rs + i;
                 /* skip current rs station */
-                if(iter_rs  == rs_station)
+                if(iter_rs == rs_station)
                     continue;
 
                 if(iter_rs->status != BUSY)
                     continue;
 
-                if(iter_rs->qj == rs_station) {
-                    iter_rs->qj = NULL;
+                if(iter_rs->qj == rs_station->dst_rob) {
+                    iter_rs->qj = -1;
                     if(rs_station->instr->type == FLOAT)
                         iter_rs->vj.f_val = float_reg_status[dst_reg_idx].reg_val.f_val;
                     else if(rs_station->instr->type == INTEGER)
@@ -272,8 +311,8 @@ static void update_rs_write(int stn_type, int no_stn)
                         iter_rs->vj.i_val = int_reg_status[dst_reg_idx].reg_val.i_val;
                 }
 
-                if(iter_rs->qk == rs_station) {
-                    iter_rs->qk = NULL;
+                if(iter_rs->qk == rs_station->dst_rob) {
+                    iter_rs->qk = -1;
                     if(rs_station->instr->type == FLOAT)
                         iter_rs->vk.f_val = float_reg_status[dst_reg_idx].reg_val.f_val;
                     else if(rs_station->instr->type == INTEGER)
@@ -287,7 +326,8 @@ static void update_rs_write(int stn_type, int no_stn)
 			rs_station->status = AVAILABLE;
 			rs_station->instr = NULL;
 			rs_station->timer = -1;
-			rs_station->qj = rs_station->qk = NULL;
+			rs_station->qj = rs_station->qk = -1;
+			rs_station->dst_rob = -1;
 			rs_station->vj.i_val = rs_station->vk.i_val = 0;
 		}
 		rs_no++;
@@ -354,13 +394,7 @@ void issue () {
 	/* the number of instructions executed. this causes the subsequent issue */
 	/* call to process the same instruction for issuing */ 
 
-	if (i >= rs_count) return;
-
-	/* now, the instruction is ready to be issued. we can get started */
-	rs = &rs_type[i];
-	rs->status = BUSY;
-	rs->instr = curr;
-	rs->timer = -1;
+	if (i >= rs_count || rob_full()) return;
 
     dst_reg_str = &curr->dest[1];
     dst_reg = atoi(dst_reg_str);
@@ -370,7 +404,27 @@ void issue () {
     else
         reg = &int_reg_status[0];
 
-    reg[dst_reg].rs = rs;
+    reg[dst_reg].rob = rob_tail;
+
+	/* now, the instruction is ready to be issued. we can get started */
+	rs = &rs_type[i];
+	rs->status = BUSY;
+	rs->instr = curr;
+	rs->timer = -1;
+    rs->qj = rs->qk = -1;
+
+    rs->dst_rob = rob_tail;
+    reorder_buffer[rob_tail].instr = curr;
+    reorder_buffer[rob_tail].status = BUSY;
+    reorder_buffer[rob_tail].val.i_val = 0;
+
+    if(rob_tail == ROB_NUM) {
+        /* let's flip this flag */
+        rob_flip ^= 1;
+        rob_tail = 0;
+    } else {
+        rob_tail++;
+    }
 
     reg_idx1 = atoi(&curr->src1[1]);
     reg_idx2 = atoi(&curr->src2[1]);
@@ -380,12 +434,12 @@ void issue () {
         rs->addr = atoi(curr->src1);
 		rs->qj = dep_lookup (curr->src2);
         //TODO, use int reg or float reg ?
-        if(!rs->qj)
+        if(rs->qj == -1)
             rs->vj.i_val = int_reg_status[reg_idx2].reg_val.i_val;
     } else {
         if(src_is_reg(curr->src1)) {
 		    rs->qj = dep_lookup (curr->src1);
-            if(!rs->qj)
+            if(rs->qj == -1)
                 rs->vj.i_val = reg[reg_idx1].reg_val.i_val;
         } else {
             rs->vj.i_val = atoi(curr->src1);
@@ -393,7 +447,7 @@ void issue () {
 
         if(src_is_reg(curr->src2)) {
             rs->qk = dep_lookup (curr->src2);
-            if(!rs->qk)
+            if(rs->qk == -1)
                 rs->vk.i_val = reg[reg_idx2].reg_val.i_val;
         } else {
             rs->vk.i_val = atoi(curr->src2);
@@ -402,6 +456,50 @@ void issue () {
 
 	curr->issue_time = cycles;
 	instr_proc++;	
+}
+
+void commit()
+{
+    int dst_reg_idx = 0;
+    struct ROB *rob_entry;
+
+    /* no instr to commit */
+    if(rob_empty())
+        return;
+
+    rob_entry = &reorder_buffer[rob_head];
+    /* first instr not ready to graduate */
+    if(rob_entry->status != RESULT_READY)
+        return;
+
+    /* update arch state */
+    dst_reg_idx = atoi(&rob_entry->instr->dest[1]);
+    if(rob_entry->instr->type == FLOAT) {
+        float_reg_status[dst_reg_idx].reg_val.f_val = rob_entry->val.f_val;
+        float_reg_status[dst_reg_idx].rob = -1;
+        printf("F%d %f\n", dst_reg_idx, rob_entry->val.f_val);
+    } else if(rob_entry->instr->type == INTEGER) {
+        int_reg_status[dst_reg_idx].reg_val.i_val = rob_entry->val.i_val;
+        int_reg_status[dst_reg_idx].rob = -1;
+        printf("R%d %d\n", dst_reg_idx, rob_entry->val.i_val);
+    } else {
+        int_reg_status[dst_reg_idx].reg_val.i_val = rob_entry->val.i_val;
+        int_reg_status[dst_reg_idx].rob = -1;
+        printf("R%d %d\n", dst_reg_idx, rob_entry->val.i_val);
+        printf("what to do at this point?\n");
+    }
+
+    rob_entry->instr = NULL;
+    rob_entry->status = AVAILABLE;
+    rob_entry->val.i_val = 0;
+
+    if(rob_head == ROB_NUM) {
+        /* let's flip this flag */
+        rob_flip ^= 1;
+        rob_head = 0;
+    } else {
+        rob_head++;
+    }
 }
 
 bool instr_finished()
@@ -435,25 +533,25 @@ static void dump_rs_state(int stn_type, int no_stn)
             continue;
         //| Name    | Busy    |  Addr.   | Op      | Vj      | Vk      | Qj      | Qk      |
         if(iter_rs->instr->type == FLOAT) {
-            printf("| %8s | %6d | %6d | %6s | %.4f | %.4f | %6s | %6s |\n",
+            printf("| %8s | %6d | %6d | %6s | %.4f | %.4f | %6d | %6d |\n",
                 iter_rs->name,
                 iter_rs->status != AVAILABLE,
                 iter_rs->addr,
                 (iter_rs->instr != NULL) ? iter_rs->instr->opcd : "-",
                 iter_rs->vj.f_val,
                 iter_rs->vk.f_val,
-                (iter_rs->qj != NULL) ? iter_rs->qj->name : "-",
-                (iter_rs->qk != NULL) ? iter_rs->qk->name : "-");
+                iter_rs->qj,
+                iter_rs->qk);
         } else {
-            printf("| %8s | %6d | %6d | %6s | %6d | %6d | %6s | %6s |\n",
+            printf("| %8s | %6d | %6d | %6s | %6d | %6d | %6d | %6d |\n",
                 iter_rs->name,
                 iter_rs->status != AVAILABLE,
                 iter_rs->addr,
                 (iter_rs->instr != NULL) ? iter_rs->instr->opcd : "-",
                 iter_rs->vj.i_val,
                 iter_rs->vk.i_val,
-                (iter_rs->qj != NULL) ? iter_rs->qj->name : "-",
-                (iter_rs->qk != NULL) ? iter_rs->qk->name : "-");
+                iter_rs->qj,
+                iter_rs->qk);
         }
     }
 }
@@ -462,6 +560,7 @@ static void dump_state()
 {
     int i;
     Instruction *inst;
+    struct ROB* rob_entry;
 
     printf("CK %d, PC %d\n", cycles, instr_proc);
     printf("#+BEGIN_SRC\n");
@@ -486,6 +585,35 @@ static void dump_state()
     }
     printf("|------------------------+---------+------------+---------|\n");
 
+    printf("** Reorder buffer \n");
+    printf("|----------+--------+--------+--------+--------+--------+---------|\n");
+    printf("| Entry | Busy |     Instruction    |     state    | Dest | Value |\n");
+    for(i = 0; i < ROB_NUM; i++) {
+        rob_entry = &reorder_buffer[i];
+        if(rob_entry->status == AVAILABLE) {
+            printf("| %5d |  No  |                    |              |      |       |\n", i);
+            continue;
+        }
+
+        printf("| %5d | Yes  | %4s %3s %4s %4s | %12s |  %s  |",
+            i,
+            rob_entry->instr->opcd,
+            rob_entry->instr->dest,
+            rob_entry->instr->src1,
+            rob_entry->instr->src2 ? inst->src2:"",
+            status_str[rob_entry->status],
+            rob_entry->instr->dest);
+        if(rob_entry->status != RESULT_READY)
+            printf("   -   |\n");
+        else {
+        if(rob_entry->instr->type == INTEGER)
+            printf("%5d  |\n", rob_entry->val.i_val);
+        else
+            printf(" %.3f |\n", rob_entry->val.f_val);
+        }
+    }
+    printf("|----------+--------+--------+--------+--------+--------+---------|\n");
+
     printf("** Reservation station\n");
     printf("|----------+--------+--------+--------+--------+--------+--------+--------|\n");
     printf("| Name     | Busy   | Addr.  | Op     | Vj     | Vk     | Qj     | Qk     |\n");
@@ -501,16 +629,16 @@ static void dump_state()
     printf("** Register result status (Qi)\n");
     printf("|");
     for(i = 0; i < NUM_INT_REGS; i++) {
-        if(int_reg_status[i].rs == NULL)
+        if(int_reg_status[i].rob == -1)
             continue;
-        printf(" R%d: %s |", i, int_reg_status[i].rs->name);
+        printf(" R%d: %d |", i, int_reg_status[i].rob);
     }
     printf("\n");
     printf("|");
     for(i = 0; i < NUM_FLOAT_REGS; i++) {
-        if(float_reg_status[i].rs == NULL)
+        if(float_reg_status[i].rob == -1)
             continue;
-        printf(" F%d: %s |", i, float_reg_status[i].rs->name);
+        printf(" F%d: %d |", i, float_reg_status[i].rob);
     }
     printf("\n");
 
@@ -564,6 +692,9 @@ int main (int argc, char **argv) {
 		execute ();
 		
 		write_back();
+
+        commit();
+
         getchar();
 	}
 

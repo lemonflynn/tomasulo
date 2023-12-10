@@ -515,39 +515,40 @@ bool instr_finished()
     return rob_empty();
 }
 
-static void dump_rs_state(int stn_type, int no_stn)
+static void dump_rs_state()
 {
-	RS *rsrv_stn = find_rs(stn_type);
     RS *iter_rs;
 	int rs_no = 0;
 
 	/*Cycle through_ Reservation Stations of the given type*/
-	while(rs_no < no_stn){
-        iter_rs = rsrv_stn + rs_no;
+	while(rs_no < total_rs_num){
+        iter_rs = all_rs + rs_no;
         rs_no++;
         if(iter_rs->status == AVAILABLE)
             continue;
         //| Name    | Busy    |  Addr.   | Op      | Vj      | Vk      | Qj      | Qk      |
         if(iter_rs->instr->type == FLOAT) {
-            printf("| %8s | %6d | %6d | %6s | %.4f | %.4f | %6d | %6d |\n",
+            printf("| %8s | %6d | %6d | %6s | %.4f | %.4f | %2d | %2d | %3d |\n",
                 iter_rs->name,
                 iter_rs->status != AVAILABLE,
                 iter_rs->addr,
-                (iter_rs->instr != NULL) ? iter_rs->instr->opcd : "-",
+                iter_rs->instr->opcd,
                 iter_rs->vj.f_val,
                 iter_rs->vk.f_val,
                 iter_rs->qj,
-                iter_rs->qk);
+                iter_rs->qk,
+                iter_rs->dst_rob);
         } else {
-            printf("| %8s | %6d | %6d | %6s | %6d | %6d | %6d | %6d |\n",
+            printf("| %8s | %6d | %6d | %6s | %6d | %6d | %2d | %2d | %3d |\n",
                 iter_rs->name,
                 iter_rs->status != AVAILABLE,
                 iter_rs->addr,
-                (iter_rs->instr != NULL) ? iter_rs->instr->opcd : "-",
+                iter_rs->instr->opcd,
                 iter_rs->vj.i_val,
                 iter_rs->vk.i_val,
                 iter_rs->qj,
-                iter_rs->qk);
+                iter_rs->qk,
+                iter_rs->dst_rob);
         }
     }
 }
@@ -611,16 +612,11 @@ static void dump_state()
     printf("|----------+--------+--------+--------+--------+--------+---------|\n");
 
     printf("** Reservation station\n");
-    printf("|----------+--------+--------+--------+--------+--------+--------+--------|\n");
-    printf("| Name     | Busy   | Addr.  | Op     | Vj     | Vk     | Qj     | Qk     |\n");
-    printf("|----------+--------+--------+--------+--------+--------+--------+--------|\n");
-    dump_rs_state(FP_ADD, NUM_FLT_ADD_RS);
-    dump_rs_state(FP_MUL, NUM_FLT_MUL_RS);
-    dump_rs_state(INT_ADD, NUM_INT_ADD_RS);
-    dump_rs_state(INT_MUL, NUM_INT_MUL_RS);
-    dump_rs_state(LD, NUM_LD_RS);
-    dump_rs_state(SD, NUM_SD_RS);
-    printf("|----------+--------+--------+--------+--------+--------+--------+--------|\n");
+    printf("|----------+--------+--------+--------+--------+--------+----+----+-----|\n");
+    printf("| Name     | Busy   | Addr.  | Op     | Vj     | Vk     | Qj | Qk | Dst |\n");
+    printf("|----------+--------+--------+--------+--------+--------+----+----+-----|\n");
+    dump_rs_state();
+    printf("|----------+--------+--------+--------+--------+--------+----+----+-----|\n");
 
     printf("** Register result status (Qi)\n");
     printf("|");

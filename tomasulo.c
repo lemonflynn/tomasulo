@@ -230,7 +230,7 @@ static void update_rs_write(int stn_type, int no_stn)
             dst_reg_idx = atoi(&rs_station->instr->dest[1]);
             rob_entry = &reorder_buffer[rs_station->dst_rob];
 
-            /* update register file */
+            /* write to reorder buffer */
             switch(stn_type) {
 		        case FP_ADD:
                     if(!strcmp ("ADDD", rs_station->instr->opcd))
@@ -282,7 +282,9 @@ static void update_rs_write(int stn_type, int no_stn)
                     break;
                 case SD:
                     //TODO is the reg value available to store ? fix for ROB
-                    mem[rs_station->addr] = int_reg_status[dst_reg_idx].reg_val.i_val;
+                    rob_entry->addr = rs_station->addr;
+                    //TODO is it safe to set f_val only ?
+                    rob_entry->val.f_val = rs_station->vk.f_val;
                     break;
                 default:
                     printf("error instruction type \n");
@@ -304,21 +306,23 @@ static void update_rs_write(int stn_type, int no_stn)
                 if(iter_rs->qj == rs_station->dst_rob) {
                     iter_rs->qj = -1;
                     if(rs_station->instr->type == FLOAT)
-                        iter_rs->vj.f_val = float_reg_status[dst_reg_idx].reg_val.f_val;
+                        iter_rs->vj.f_val = rob_entry->val.f_val;
                     else if(rs_station->instr->type == INTEGER)
-                        iter_rs->vj.i_val = int_reg_status[dst_reg_idx].reg_val.i_val;
+                        iter_rs->vj.i_val = rob_entry->val.i_val;
                     else if(stn_type == LD)
-                        iter_rs->vj.i_val = int_reg_status[dst_reg_idx].reg_val.i_val;
+                        iter_rs->vj.i_val = rob_entry->val.i_val;
                 }
 
                 if(iter_rs->qk == rs_station->dst_rob) {
                     iter_rs->qk = -1;
                     if(rs_station->instr->type == FLOAT)
-                        iter_rs->vk.f_val = float_reg_status[dst_reg_idx].reg_val.f_val;
+                        iter_rs->vk.f_val = rob_entry->val.f_val;
                     else if(rs_station->instr->type == INTEGER)
-                        iter_rs->vk.i_val = int_reg_status[dst_reg_idx].reg_val.i_val;
+                        iter_rs->vk.i_val = rob_entry->val.i_val;
                     else if(stn_type == LD)
-                        iter_rs->vk.i_val = int_reg_status[dst_reg_idx].reg_val.i_val;
+                        iter_rs->vk.i_val = rob_entry->val.i_val;
+                    else if(stn_type == SD)
+                        iter_rs->vk.f_val = rob_entry->val.f_val;
                 }
             }
 
@@ -362,7 +366,7 @@ void issue () {
 	RS *rs_type, *rs;
     char * dst_reg_str;
     struct reg_status * reg = NULL;
-    int reg_idx1, reg_idx2;
+    int reg_idx0, reg_idx1, reg_idx2;
 	curr = &iq[instr_proc];
 
 	/* Based on the opcode type, assign a common looping pointer and a counter */ 
@@ -429,6 +433,7 @@ void issue () {
         rob_tail++;
     }
 
+    reg_idx0 = atoi(&curr->dest[1]);
     reg_idx1 = atoi(&curr->src1[1]);
     reg_idx2 = atoi(&curr->src2[1]);
     // LD or ST inst
@@ -439,6 +444,17 @@ void issue () {
         //TODO, use int reg or float reg ?
         if(rs->qj == -1)
             rs->vj.i_val = int_reg_status[reg_idx2].reg_val.i_val;
+
+        if(!strcmp(curr->opcd, "SD")){
+            /* this is actually source reg for store instruction */
+            rs->qk = dep_lookup(curr->dest);
+            if(rs->qk == -1) {
+                if(curr->dest[0] == 'R')
+                    rs->vk.i_val = int_reg_status[reg_idx0].reg_val.i_val;
+                else
+                    rs->vk.f_val = float_reg_status[reg_idx0].reg_val.f_val;
+            }
+        }
     } else {
         if(src_is_reg(curr->src1)) {
 		    rs->qj = dep_lookup (curr->src1);
@@ -486,10 +502,14 @@ void commit()
         int_reg_status[dst_reg_idx].rob = -1;
         printf("R%d %d\n", dst_reg_idx, rob_entry->val.i_val);
     } else {
-        int_reg_status[dst_reg_idx].reg_val.i_val = rob_entry->val.i_val;
-        int_reg_status[dst_reg_idx].rob = -1;
-        printf("R%d %d\n", dst_reg_idx, rob_entry->val.i_val);
-        printf("what to do at this point?\n");
+        if(!strcmp(rob_entry->instr->opcd, "SD")) {
+            mem[rob_entry->addr] = rob_entry->val.f_val;
+        } else {
+            int_reg_status[dst_reg_idx].reg_val.i_val = rob_entry->val.i_val;
+            int_reg_status[dst_reg_idx].rob = -1;
+            printf("R%d %d\n", dst_reg_idx, rob_entry->val.i_val);
+            printf("what to do at this point?\n");
+        }
     }
 
     rob_entry->instr = NULL;
@@ -538,7 +558,7 @@ static void dump_rs_state()
                 iter_rs->qj,
                 iter_rs->qk,
                 iter_rs->dst_rob);
-        } else {
+        } else if (iter_rs->instr->type == INTEGER){
             printf("| %8s | %6d | %6d | %6s | %6d | %6d | %2d | %2d | %3d |\n",
                 iter_rs->name,
                 iter_rs->status != AVAILABLE,
@@ -546,6 +566,17 @@ static void dump_rs_state()
                 iter_rs->instr->opcd,
                 iter_rs->vj.i_val,
                 iter_rs->vk.i_val,
+                iter_rs->qj,
+                iter_rs->qk,
+                iter_rs->dst_rob);
+        } else if(!strcmp(iter_rs->instr->opcd, "SD")) {
+            printf("| %8s | %6d | %6d | %6s | %6d | %.4f | %2d | %2d | %3d |\n",
+                iter_rs->name,
+                iter_rs->status != AVAILABLE,
+                iter_rs->addr,
+                iter_rs->instr->opcd,
+                iter_rs->vj.i_val,
+                iter_rs->vk.f_val,
                 iter_rs->qj,
                 iter_rs->qk,
                 iter_rs->dst_rob);
@@ -592,21 +623,26 @@ static void dump_state()
             continue;
         }
 
-        printf("| %5d | Yes  | %4s %3s %4s %4s | %12s |  %s  |",
+        printf("| %5d | Yes  | %4s %3s %4s %4s | %12s |",
             i,
             rob_entry->instr->opcd,
             rob_entry->instr->dest,
             rob_entry->instr->src1,
             rob_entry->instr->src2 ? inst->src2:"",
-            status_str[rob_entry->status],
-            rob_entry->instr->dest);
+            status_str[rob_entry->status]);
+
+        if(!strcmp(rob_entry->instr->opcd, "SD"))
+            printf(" %3d |", rob_entry->addr);
+        else
+            printf("  %s  |", rob_entry->instr->dest);
+
         if(rob_entry->status != RESULT_READY)
             printf("   -   |\n");
         else {
-        if(rob_entry->instr->type == INTEGER)
-            printf("%5d  |\n", rob_entry->val.i_val);
-        else
-            printf(" %.3f |\n", rob_entry->val.f_val);
+            if(rob_entry->instr->type == INTEGER)
+                printf("%5d  |\n", rob_entry->val.i_val);
+            else
+                printf(" %.3f |\n", rob_entry->val.f_val);
         }
     }
     printf("|----------+--------+--------+--------+--------+--------+---------|\n");

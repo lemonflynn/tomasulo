@@ -55,6 +55,7 @@ struct reg_status{
 
 struct ROB {
     Instruction *instr;
+    int addr;
     enum rs_status status;
     union {
         int i_val;

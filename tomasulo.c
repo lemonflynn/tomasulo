@@ -394,7 +394,10 @@ void issue () {
 	/* the number of instructions executed. this causes the subsequent issue */
 	/* call to process the same instruction for issuing */ 
 
-	if (i >= rs_count || rob_full()) return;
+	if (i >= rs_count || rob_full()) {
+        printf("structure hazard !\n");
+        return;
+    }
 
     dst_reg_str = &curr->dest[1];
     dst_reg = atoi(dst_reg_str);
@@ -418,7 +421,7 @@ void issue () {
     reorder_buffer[rob_tail].status = BUSY;
     reorder_buffer[rob_tail].val.i_val = 0;
 
-    if(rob_tail == ROB_NUM) {
+    if(rob_tail == ROB_NUM - 1) {
         /* let's flip this flag */
         rob_flip ^= 1;
         rob_tail = 0;
@@ -493,7 +496,7 @@ void commit()
     rob_entry->status = AVAILABLE;
     rob_entry->val.i_val = 0;
 
-    if(rob_head == ROB_NUM) {
+    if(rob_head == ROB_NUM - 1) {
         /* let's flip this flag */
         rob_flip ^= 1;
         rob_head = 0;
@@ -504,19 +507,12 @@ void commit()
 
 bool instr_finished()
 {
-    static int last_cycle = 0;
     int i;
     for(i = 0; i < instr_count; i++)
         if(iq[i].write_time == 0)
             return false;
 
-    /* let's wait last instruction finish write back */
-    if(!last_cycle) {
-        last_cycle = 1;
-        return false;
-    }
-
-    return true;
+    return rob_empty();
 }
 
 static void dump_rs_state(int stn_type, int no_stn)

@@ -9,6 +9,11 @@
 # Memory operations
 LD 		3 	3 	C
 SD 		3 	3 	C
+BEQ     3   2   C
+#JAL     2   2   C
+
+#BEQ rs1,rs2,imm
+#JAL rd,imm
 
 # Integer Operations
 ADD 	3 	2 	I

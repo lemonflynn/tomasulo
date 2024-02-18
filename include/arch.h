@@ -17,6 +17,9 @@
 /* RSs for SD */
 #define NUM_SD_RS 2
 
+/* RSs for Branch */
+#define NUM_BEQ_RS 2
+
 /* RSs for Integer Adders */
 #define NUM_INT_ADD_RS 4
 
@@ -41,6 +44,8 @@
 #define LD 4
 
 #define SD 5
+
+#define BEQ 6
 
 /* MAX number of Reservation stations */
 #define MAX(a,b) ((a)>(b)?(a):(b))

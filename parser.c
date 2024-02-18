@@ -5,8 +5,10 @@ static void create_operation (char *line) {
 	int num_ops, latency; 
 	char type;
 
-	if (!(op_count % 10))
-		ops = (Operation *) realloc (ops, sizeof(Operation) * 10);
+	if (!(op_count % 20)) {
+        //TODO, the size of realloc is wrong, fix this later
+		ops = (Operation *) realloc (ops, sizeof(Operation) * 20);
+    }
 
 	strcpy (name, strtok (line,DELIMITERS));
 	if (!name[0])
@@ -68,7 +70,7 @@ static void queue_instuction (char *line) {
 
 	sscanf (line, "%s", opcode);
 
-	if (!lookup_definition (opcode, &instr_defn)) 
+	if (!lookup_definition (opcode, &instr_defn))
 		fatal ("Undefined instruction : %s\n", line);
 
 	iq[instr_count].opcd = strdup (strtok (line, DELIMITERS));

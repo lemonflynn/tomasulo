@@ -376,6 +376,11 @@ void issue () {
     char * dst_reg_str;
     struct reg_status * reg = NULL;
     int reg_idx0, reg_idx1, reg_idx2;
+
+    /* instruction queue empty, return early */
+    if(instr_proc >= instr_count)
+        return;
+
 	curr = &iq[instr_proc];
 
 	/* Based on the opcode type, assign a common looping pointer and a counter */ 
@@ -504,6 +509,11 @@ void issue () {
 
 	curr->issue_time = cycles;
 	instr_proc++;	
+}
+
+void dual_issue () {
+    issue();
+    issue();
 }
 
 void commit()
@@ -652,9 +662,9 @@ static void dump_state()
 
     printf("CK %d, PC %d\n", cycles, instr_proc);
     printf("#+BEGIN_SRC\n");
-    for(i = 0; i < instr_count; i++) {
+    for(i = 0; i < instr_count-1; i++) {
         inst = &iq[i];
-        if(i == instr_proc)
+        if(i == instr_proc || i == instr_proc + 1)
             printf("> %d %6s %3s %6s %6s\n", i, inst->opcd, inst->dest, inst->src1, inst->src2 ? inst->src2:"");
         else
             printf("  %d %6s %3s %6s %6s\n", i, inst->opcd, inst->dest, inst->src1, inst->src2 ? inst->src2:"");
@@ -776,8 +786,7 @@ int main (int argc, char **argv) {
 
 		cycles++;
 
-        if(instr_proc < instr_count)
-		    issue ();
+		dual_issue ();
 
 		execute ();
 		
